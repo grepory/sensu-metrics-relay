@@ -36,6 +36,7 @@ module Sensu::Extension
   # and Jeff Kolesky for feedback and review.
   class Metrics < Mutator
     def initialize
+      super
       @endpoints = {}
       @mutators = {
         graphite: method(:graphite),
