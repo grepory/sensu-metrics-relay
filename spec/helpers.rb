@@ -26,8 +26,6 @@ module Wizardvan::Test
     class TestServer < EM::Connection
       include RSpec::Matchers
 
-      attr_accessor :expected
-
       def receive_data(data)
         EM.stop_event_loop
       end
