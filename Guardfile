@@ -11,6 +11,7 @@ guard :rspec do
     "spec/lib/#{m[1]}_spec.rb"
   end
   watch('spec/spec_helper.rb') { "spec" }
+  watch('spec/helpers.rb') { "spec" }
   watch('spec/fixtures.rb') { "spec" }
   watch(%r{^spec/fixtures/}) { "spec" }
 end
