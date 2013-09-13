@@ -51,8 +51,12 @@ describe Sensu::Extension::RelayConnectionHandler do
     @connection.close_connection
     @connection.reconnect(0)
     EM.next_tick do
-      @connection.connected.should eq(true)
-      async_done
+      EM.next_tick do
+        EM.next_tick do
+          @connection.connected.should eq(true)
+          async_done
+        end
+      end
     end
   end
 
@@ -62,6 +66,9 @@ describe Sensu::Extension::Endpoint do
 
   around(:each) do |example|
     async_wrapper do
+      host = Wizardvan::Test::Fixtures::HOST
+      port = Wizardvan::Test::Fixtures::PORT
+      EM.start_server(host, port, Wizardvan::Test::Helpers::TestServer)
       @endpoint = Sensu::Extension::Endpoint.new('name',
                                                  Wizardvan::Test::Fixtures::HOST,
                                                  Wizardvan::Test::Fixtures::PORT)
@@ -74,11 +81,60 @@ describe Sensu::Extension::Endpoint do
     async_done
   end
 
+  it 'can connect to a backend' do
+    EM.next_tick do
+      EM.next_tick do
+        @endpoint.connection.connected.should eq(true)
+        async_done
+      end
+    end
+  end
+
   it 'returns the correct queue length' do
     @endpoint.queue << 'test'
     @endpoint.queue << 'test'
     @endpoint.queue_length.should eq(8)
     async_done
+  end
+
+  it 'can flush to net' do
+    async_wrapper do
+      EM.next_tick do
+        EM.next_tick do
+          @endpoint.queue << 'a' * 16385
+          @endpoint.flush_to_net
+          @endpoint.queue.length.should eq(0)
+          async_done
+        end
+      end
+    end
+  end
+
+  it 'can relay an event' do
+    async_wrapper do
+      EM.next_tick do
+        EM.next_tick do
+          @endpoint.queue << 'a' * 16384
+          @endpoint.relay_event('event')
+          @endpoint.queue.length.should eq(0)
+          async_done
+        end
+      end
+    end
+  end
+
+  it 'can be stopped' do
+    async_wrapper do
+      EM.next_tick do
+        @endpoint.stop
+        EM.next_tick do
+          EM.next_tick do
+            @endpoint.connection.connected.should eq(false)
+            async_done
+          end
+        end
+      end
+    end
   end
 
 end
@@ -100,6 +156,45 @@ describe ExponentialDecayTimer do
 
   it 'does not return a time > MAX_RECONNECT_TIME' do
     @timer.get_reconnect_time(MAX_RECONNECT_TIME, 11).should == MAX_RECONNECT_TIME
+  end
+
+end
+
+describe Sensu::Extension::MetricEmitter do
+
+  before(:each) do
+    @emitter = Sensu::Extension::MetricEmitter.new()
+  end
+
+  it 'can be initialized' do
+    @emitter.should be_an_instance_of(Sensu::Extension::MetricEmitter)
+  end
+
+  it 'can update a metric' do
+    @emitter.update_metric('test', 1)
+    @emitter.get_metric('test').should eq(1)
+  end
+
+  it 'can zero a metric' do
+    @emitter.zero_metric('test')
+    @emitter.get_metric('test').should eq(0)
+  end
+
+  it 'can create an event' do
+    @emitter.event.should eq(Wizardvan::Test::Fixtures::EMPTY_METRICS_EVENT.to_json)
+  end
+
+  it 'can emit an event' do
+    async_wrapper do
+      host = Wizardvan::Test::Fixtures::HOST
+      port = Wizardvan::Test::Fixtures::PORT
+      EM.start_server(host, port, Wizardvan::Test::Helpers::TestServer)
+      @emitter.host = host
+      @emitter.port = port
+      @emitter.update_metric('test', 1)
+      @emitter.emit
+      async_done
+    end
   end
 
 end
@@ -146,6 +241,15 @@ describe Sensu::Extension::Relay do
       @handler.run(mutated_event) do |status, error|
         status.should eq('')
         error.should eq(0)
+        async_done
+      end
+    end
+  end
+
+  it 'can be stopped' do
+    async_wrapper do
+      @handler.post_init
+      @handler.stop do
         async_done
       end
     end

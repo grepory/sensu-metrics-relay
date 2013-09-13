@@ -1,0 +1,10 @@
+{
+  "check": {
+    "name": "wizardvan_metrics",
+    "handler": "relay",
+    "status": 0,
+    "type": "metric",
+    "output_type": "json",
+    "output": "[]"
+  }
+}

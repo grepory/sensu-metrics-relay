@@ -1,1 +1,18 @@
-{"relay":{"graphite":{"host":"127.0.0.1","port":31337},"opentsdb":{"host":"127.0.0.1","port":31337}}}
+{
+  "relay": {
+    "graphite": {
+      "host": "127.0.0.1",
+      "port": 31337
+    },
+    "opentsdb": {
+      "host": "127.0.0.1",
+      "port": 31337
+    },
+    "metrics": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 31337,
+      "interval": 60
+    }
+  }
+}

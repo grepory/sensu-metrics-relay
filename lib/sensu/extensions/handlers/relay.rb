@@ -136,6 +136,13 @@ module Sensu::Extension
         .reduce(:+)
     end
 
+    def metric_count
+      @queue
+        .join
+        .split('\n')
+        .length
+    end
+
     def flush_to_net
       sent = @connection.send_data(@queue.join)
       @queue = [] if sent > 0
@@ -160,6 +167,68 @@ module Sensu::Extension
 
   end
 
+  # MetricEmitter
+  #
+  # Used for connecting to sensu-client locally to emit metric events
+  # Handles arbitrary metrics, formats them in the JSON Metric format
+  # Sends a JSON Event to sensu locally containing the metrics
+  class MetricEmitter
+    attr_accessor :host, :port
+
+    def initialize
+      @connection = nil
+      @metrics = { }
+    end
+
+    def emit
+      @connection ||= EM.connect(@host, @port, RelayConnectionHandler)
+      @connection.send_data(event)
+      @metrics.keys.each do |key|
+        zero_metric(key)
+      end
+    end
+
+    def update_metric(name, value)
+      zero_metric(name) unless @metrics.has_key?(name)
+      @metrics[name] += value
+    end
+
+    def zero_metric(name)
+      @metrics[name] = 0
+    end
+
+    def get_metric(name)
+      @metrics[name]
+    end
+
+    def event
+      output_metrics = []
+      @metrics.each do |metric|
+        output_metrics << {
+          'name' => metric,
+          'value' => @metrics[metric],
+          'timestamp' => Time.now.to_i,
+          'tags' => {}
+        }
+      end
+      {
+        'check' => {
+          'name' => 'wizardvan_metrics',
+          'handler' => 'relay',
+          'status' => 0,
+          'type' => 'metric',
+          'output_type' => 'json',
+          'output' => output_metrics.to_json
+        }
+      }.to_json
+    end
+
+    def stop
+      @connection.close_connection_after_writing
+    end
+
+  end
+
   # The Relay handler expects to be called from a mutator that has prepared
   # output of the following format:
   # {
@@ -176,15 +245,15 @@ module Sensu::Extension
 
     # ignore :reek:LongMethod
     def post_init
-      @settings[:relay].keys.each do |endpoint_name|
-        ep_name = endpoint_name.intern
-        ep_settings = @settings[:relay][ep_name]
+      @settings[:relay].each do |ep_name, ep_settings|
+        next if ep_name == :metrics
         @endpoints[ep_name] = Endpoint.new(
           ep_name,
-          ep_settings['host'],
-          ep_settings['port']
+          ep_settings[:host],
+          ep_settings[:port]
         )
       end
+      setup_metrics_emitter
     end
 
     def definition
@@ -203,12 +272,29 @@ module Sensu::Extension
       'Relay metrics via a persistent TCP connection'
     end
 
+    def setup_metrics_emitter
+      metrics_settings = @settings[:relay][:metrics]
+      @emitter = MetricEmitter.new()
+      if metrics_settings[:enabled]
+        @emitter.host = metrics_settings[:host]
+        @emitter.port = metrics_settings[:port]
+        EM.add_periodic_timer(metrics_settings[:interval]) do
+          @emitter.emit
+        end
+      end
+    end
+
     # ignore :reek:LongMethod
     def run(event_data)
       begin
         event_data.keys.each do |ep_name|
+          endpoint = @endpoints[ep_name]
           logger.debug("relay.run() handling endpoint: #{ep_name}")
-          @endpoints[ep_name].relay_event(event_data[ep_name])
+          endpoint.relay_event(event_data[ep_name])
+          @emitter.update_metric(
+            "#{ep_name}.metrics_sent",
+            endpoint.metric_count
+          )
         end
       rescue => error
         yield(error.to_s, 2)
@@ -219,6 +305,10 @@ module Sensu::Extension
     def stop
       @endpoints.each_value do |ep|
         ep.stop
+      end
+      if @settings[:relay][:metrics][:enabled]
+        @emitter.emit
+        @emitter.stop
       end
       yield
     end
