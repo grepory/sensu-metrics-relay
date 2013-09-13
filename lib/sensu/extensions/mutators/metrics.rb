@@ -73,7 +73,7 @@ module Sensu::Extension
         ep_name = endpoint_name.intern
         mutator = @mutators[ep_name] || next
         mutate(mutator, ep_name)
-      end unless settings[:relay].nil? # keys.each
+      end if settings[:relay]
       # if we aren't configured we simply pass nil to the handler which it then
       # guards against. fail silently.
       yield(@endpoints, 0)
@@ -117,7 +117,7 @@ module Sensu::Extension
     def opentsdb(metric)
       check = @event[:check]
       out = "put #{metric['name']} #{metric['timestamp']} #{metric['value']}"
-      out << " check_name=#{check[:name]}" unless check[:name].nil?
+      out << " check_name=#{check[:name]}" if check[:name]
       out << " host=#{@event[:client][:name]}" unless check[:auto_tag_host] == 'no'
       out << "\n"
     end
